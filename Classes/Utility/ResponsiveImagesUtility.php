@@ -9,6 +9,7 @@ use TYPO3\CMS\Core\Imaging\ImageManipulation\Area;
 use TYPO3\CMS\Fluid\Core\ViewHelper\TagBuilder;
 use TYPO3\CMS\Extbase\Service\ImageService;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
+use TYPO3\CMS\Core\Utility\ExtensionManagementUtility;
 
 class ResponsiveImagesUtility implements SingletonInterface
 {
@@ -18,6 +19,13 @@ class ResponsiveImagesUtility implements SingletonInterface
      * @var ImageService
      */
     protected $imageService;
+
+    /**
+     * Secure Download Service
+     *
+     * @var \Bitmotion\SecureDownloads\Service\SecureDownloadService
+     */
+    protected $secureDownloadService;
 
     /**
      * Default media breakpoint configuration
@@ -206,7 +214,10 @@ class ResponsiveImagesUtility implements SingletonInterface
             // Set srcset attribute for fallback image (not src as advised by picturefill)
             $fallbackImageUri = $this->imageService->getImageUri($fallbackImage, $absoluteUri);
             if ($picturefillMarkup) {
-                $fallbackTag->addAttribute($attributePrefix . 'srcset', $fallbackImageUri);
+                $fallbackTag->addAttribute(
+                    $attributePrefix . 'srcset',
+                    $this->publishSecureDownloadsResourceUri($fallbackImageUri)
+                );
             } else {
                 $fallbackTag->addAttribute($attributePrefix . 'src', $fallbackImageUri);
             }
@@ -430,7 +441,9 @@ class ResponsiveImagesUtility implements SingletonInterface
                 $widthDescriptor = $processedWidth . 'w';
             }
 
-            $images[$widthDescriptor] = $this->imageService->getImageUri($processedImage, $absoluteUri);
+            $images[$widthDescriptor] = $this->publishSecureDownloadsResourceUri(
+                $this->imageService->getImageUri($processedImage, $absoluteUri)
+            );
         }
 
         return $images;
@@ -493,5 +506,28 @@ class ResponsiveImagesUtility implements SingletonInterface
             : GeneralUtility::trimExplode(',', $ignoreFileExtensions);
 
         return in_array($image->getProperty('extension'), $ignoreFileExtensions);
+    }
+
+    /**
+     * Transforms a relative file URL to a secure download protected URL
+     * if the "secure_downloads" extension is loaded.
+     * This is needed because the HTML parser of secure_downloads does not
+     * support parsing srcset-attributes
+     *
+     * @param string $uri
+     *
+     * @return uri
+     */
+    protected function publishSecureDownloadsResourceUri(string $uri)
+    {
+        if (ExtensionManagementUtility::isLoaded('secure_downloads')) {
+            if (!isset($this->secureDownloadService)) {
+                $this->secureDownloadService = GeneralUtility::makeInstance(
+                    \Bitmotion\SecureDownloads\Service\SecureDownloadService::class
+                );
+            }
+            $uri = $this->secureDownloadService->publishResourceUri($uri);
+        }
+        return $uri;
     }
 }
